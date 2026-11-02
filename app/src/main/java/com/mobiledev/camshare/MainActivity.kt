@@ -1,15 +1,23 @@
 package com.mobiledev.camshare
 
+import android.Manifest
+import android.content.ClipData
+import android.content.Context
 import android.content.Intent
-import androidx.compose.foundation.layout.fillMaxWidth
+import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
@@ -17,24 +25,20 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import com.mobiledev.camshare.ui.theme.CamShareTheme
-import android.content.Context
-import java.io.File
-import android.net.Uri
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import coil.compose.AsyncImage
-
+import com.mobiledev.camshare.ui.theme.CamShareTheme
+import java.io.File
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -45,42 +49,36 @@ class MainActivity : ComponentActivity() {
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),
                     containerColor = MaterialTheme.colorScheme.background
-
                 ) { innerPadding ->
-                    CamShare(modifier = Modifier.padding( innerPadding))
+                    CamShare(modifier = Modifier.padding(innerPadding))
                 }
             }
         }
     }
 }
 
-
 fun createImageFile(context: Context): File {
-
     val imageFile = File(
         context.cacheDir,
         "captured_photo.jpg"
     )
+    if (!imageFile.exists()) {
+        imageFile.createNewFile()
+    }
     return imageFile
 }
 
-
 fun createImageUri(context: Context): Uri {
-
     val imageFile = createImageFile(context)
-    val imageUri = FileProvider.getUriForFile(
+    return FileProvider.getUriForFile(
         context,
         "${context.packageName}.fileprovider",
         imageFile
     )
-    return imageUri
 }
 
-
-
-
 @Composable
-fun CamShare(modifier: Modifier = Modifier){
+fun CamShare(modifier: Modifier = Modifier) {
     val context = LocalContext.current
 
     var photoUri by remember {
@@ -91,13 +89,27 @@ fun CamShare(modifier: Modifier = Modifier){
         mutableStateOf<Uri?>(null)
     }
 
-
     val cameraLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture()
     ) { success ->
-
         if (success) {
             photoUri = imageUri
+        }
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            val newUri = createImageUri(context)
+            imageUri = newUri
+            cameraLauncher.launch(newUri)
+        } else {
+            Toast.makeText(
+                context,
+                "Camera permission is required to take photos",
+                Toast.LENGTH_SHORT
+            ).show()
         }
     }
 
@@ -105,7 +117,6 @@ fun CamShare(modifier: Modifier = Modifier){
         modifier = modifier
             .fillMaxSize()
             .padding(16.dp),
-
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
@@ -131,10 +142,17 @@ fun CamShare(modifier: Modifier = Modifier){
 
         Button(
             onClick = {
-
-                imageUri = createImageUri(context)
-
-                cameraLauncher.launch(imageUri!!)
+                val permissionCheck = ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.CAMERA
+                )
+                if (permissionCheck == PackageManager.PERMISSION_GRANTED) {
+                    val newUri = createImageUri(context)
+                    imageUri = newUri
+                    cameraLauncher.launch(newUri)
+                } else {
+                    permissionLauncher.launch(Manifest.permission.CAMERA)
+                }
             }
         ) {
             Text("Take Photo")
@@ -144,13 +162,11 @@ fun CamShare(modifier: Modifier = Modifier){
         Button(
             onClick = {
                 val uri = photoUri
-
                 if (uri != null) {
                     val shareIntent = Intent(Intent.ACTION_SEND).apply {
                         type = "image/jpeg"
-
                         putExtra(Intent.EXTRA_STREAM, uri)
-
+                        clipData = ClipData.newRawUri("Captured Photo", uri)
                         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     }
 
@@ -169,11 +185,8 @@ fun CamShare(modifier: Modifier = Modifier){
     }
 }
 
-
-
 @Preview(showBackground = true)
 @Composable
-fun CamSharePreview(modifier: Modifier = Modifier){
+fun CamSharePreview() {
     CamShare()
-
 }
